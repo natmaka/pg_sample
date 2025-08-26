@@ -522,6 +522,7 @@ sub notice (@) {
 );
 
 GetOptions(\%opt,
+  "approxcount",
   "data-only|data_only|a",
   "db_name|db-name=s",
   "db_user|db-user|db_username|db-username|username|U=s",
@@ -827,6 +828,17 @@ sub should_skip_insert_for_fk ($) {
   return 0;  # Do not skip by default
 }
 
+sub APPROX_table_tuples_count($$) {
+	my $dbh = ${ shift() }; # dereference the reference to DBI session handle
+	my $tablename = $dbh->quote_identifier(shift);
+
+	my ($count) = $dbh->do(qq{SELECT c.reltuples::bigint AS approx_row_count FROM pg_class c WHERE c.relname = $tablename AND c.relkind = 'r'});
+	if ($count < 1) {
+		$dbh->do(qq{ANALYZE $tablename});
+		($count) = $dbh->do(qq{SELECT c.reltuples::bigint AS approx_row_count FROM pg_class c WHERE c.relname = $tablename AND c.relkind = 'r'});
+	}
+	return $count;
+}
 
 # Keep inserting rows to satisfy any fk constraints until no more
 # are inserted. This should handle circular references.
