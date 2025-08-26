@@ -559,8 +559,11 @@ if ($opt{help}) {
 }
 
 if (defined $opt{sampling_method}) {
+	$opt{sampling_method}=uc($opt{sampling_method});
 	die "Option sampling-method accepts either 'BERNOULLI' or 'SYSTEM'" if ('BERNOULLI' ne $opt{sampling_method} and 'SYSTEM' ne $opt{sampling_method});
-	$opt{random}=1;
+	$opt{random}=1; # implied
+} else {
+	$opt{sampling_method}='BERNOULLI' if $opt{random}; # default method
 }
 
 $opt{ordered} = $opt{ordered_desc} ? 'DESC'
