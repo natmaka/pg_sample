@@ -1,5 +1,12 @@
 #!/usr/bin/env perl
 
+use strict;
+use warnings;
+use Carp;
+use Getopt::Long qw/ GetOptions :config no_ignore_case /;
+use DBI;
+use DBD::Pg 2.0.0;
+
 our $VERSION = "1.17";
 
 =head1 NAME
@@ -205,13 +212,6 @@ Maurice Aubrey <maurice.aubrey@gmail.com>
 # Finally, the database schema and sample data are output, renaming the sample
 # table names to reflect the original database.
 
-use strict;
-use warnings;
-use Carp;
-use Getopt::Long qw/ GetOptions :config no_ignore_case /;
-use DBI;
-use DBD::Pg 2.0.0;
-
 our $MAX_IDENTIFIER_LENGTH = 63;
 
 $SIG{TERM} = $SIG{INT} = $SIG{QUIT} = $SIG{HUP} = sub {
@@ -348,7 +348,7 @@ my %opt; # closure; all functions have access to options
         PrintError       => 0,
         HandleError      => sub { confess( shift ) },
       },
-    ) or croak "db connection failed!";
+    ) or croak "DB connection failed!";
 
     $dbh->trace(1) if defined $opt{trace};
 
@@ -561,7 +561,7 @@ if ($opt{help}) {
 if (defined $opt{sampling_method}) {
 	$opt{sampling_method}=uc($opt{sampling_method});
 	die "Option sampling-method accepts either 'BERNOULLI' or 'SYSTEM'" if ('BERNOULLI' ne $opt{sampling_method} and 'SYSTEM' ne $opt{sampling_method});
-	$opt{random}=1; # implied
+	$opt{random}=2; # implied
 } else {
 	$opt{sampling_method}='BERNOULLI' if $opt{random}; # default method
 }
@@ -571,11 +571,12 @@ $opt{ordered} = $opt{ordered_desc} ? 'DESC'
               : $opt{ordered}      ? 'DESC'
               : undef;
 if ($opt{random} && $opt{ordered}) {
-  print("Error: --random and --ordered are mutually exclusive");
+	warn "you used --sampling_method, therefore --random was automatically enabled " if ( 2 == $opt{random} );
+  warn "Error: --random and --ordered are mutually exclusive";
   exit 1;
 }
 
-@ARGV or die "\nUsage: $0 [ option... ] [ dbname ]\n\n\t" .
+@ARGV or die "Usage: $0 [ option... ] [ dbname ]\n\n\t" .
              "$0 --help for detailed options\n";
 
 push @{ $opt{limit} }, ".* = 100 "; # append default limit rule
