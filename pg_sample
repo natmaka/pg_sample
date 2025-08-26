@@ -510,6 +510,7 @@ sub notice (@) {
 
 
 %opt = (
+approxcount => 0,
   db_host       => '',
   db_port       => '',
   keep          => 0,
@@ -641,6 +642,15 @@ unless ($opt{'data-only'}) {
 
 # If running PostgreSQL 9.1 or later, use UNLOGGED tables
 my $unlogged = $pg_version >= version->declare('9.1') ? 'UNLOGGED' : '';
+
+# Ensuring that the user can read (GRANT...) the 'pg_class' table
+eval {
+	$dbh->selectrow_array(qq{SELECT 1 FROM pg_class LIMIT 1")});
+};
+if ($@) {
+	warn "I cannot read from the 'pg_class' table, therefore I cannot honor --approxcount: $@\n";
+	$opt{approxcount}=0;
+}
 
 notice "Creating sample schema $opt{sample_schema}\n";
 $dbh->do(qq{ CREATE SCHEMA $opt{sample_schema} });
@@ -834,7 +844,8 @@ sub APPROX_table_tuples_count($$) {
 	my $dbh = ${ shift() }; # dereference the reference to DBI session handle
 	my $tablename = $dbh->quote_identifier(shift);
 
-	my ($count) = $dbh->do(qq{SELECT c.reltuples::bigint FROM pg_class c WHERE c.relname = $tablename AND c.relkind = 'r'});
+	# todo: take into account the last ANALYZE age, sizeof(tuples)/sizeof(shema def)...
+	my ($count) = $dbh->do(qq{SELECT c.reltuples::bigint FROM pg_class WHERE relname = $tablename AND relkind = 'r'});
 	if ($count < 1) { # may indicate that the evaluated amount is dubious
 		$dbh->do(qq{ANALYZE $tablename});
 		($count) = $dbh->do(qq{SELECT c.reltuples::bigint AS approx_row_count FROM pg_class c WHERE c.relname = $tablename AND c.relkind = 'r'});
