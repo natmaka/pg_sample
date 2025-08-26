@@ -828,12 +828,14 @@ sub should_skip_insert_for_fk ($) {
   return 0;  # Do not skip by default
 }
 
+# Obtains the amount of tuples in a table.
+# May over/under-estimate if the table needs an ANALYZE pass.
 sub APPROX_table_tuples_count($$) {
 	my $dbh = ${ shift() }; # dereference the reference to DBI session handle
 	my $tablename = $dbh->quote_identifier(shift);
 
-	my ($count) = $dbh->do(qq{SELECT c.reltuples::bigint AS approx_row_count FROM pg_class c WHERE c.relname = $tablename AND c.relkind = 'r'});
-	if ($count < 1) {
+	my ($count) = $dbh->do(qq{SELECT c.reltuples::bigint FROM pg_class c WHERE c.relname = $tablename AND c.relkind = 'r'});
+	if ($count < 1) { # may indicate that the evaluated amount is dubious
 		$dbh->do(qq{ANALYZE $tablename});
 		($count) = $dbh->do(qq{SELECT c.reltuples::bigint AS approx_row_count FROM pg_class c WHERE c.relname = $tablename AND c.relkind = 'r'});
 	}
