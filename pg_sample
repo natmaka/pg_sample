@@ -124,6 +124,14 @@ increase the running time of the script.
 
 Schema name to use for the sample database (defaults to _pg_sample).
 
+=item B<--sampling_method=>I<method name>
+
+Sampling method used to select samples, either 'BERNOULLI' or 'SYSTEM'.
+Defaults to BERNOULLI, the most random method.
+SYSTEM may speed up the sampling phase on a huge database, at the
+potential price of a less-random sample.
+Implicitly enables --random.
+
 =item B<--schema=>I<schema>
 
 Limit sampling to the specified schema. By default, all schemas are sampled.
@@ -509,6 +517,7 @@ sub notice (@) {
   random        => 0,
   schema        => undef,
   sample_schema => '_pg_sample',
+	sampling_method => undef,
   verbose       => 0,
 );
 
@@ -530,7 +539,8 @@ GetOptions(\%opt,
   "ordered_desc|ordered-desc",
   "ordered_asc|ordered-asc",
   "random",
-  "sample_schema=s",
+	"sample_schema=s",
+	"sampling_method=s",
   "schema=s",
   "trace",
   "verbose|v",
@@ -546,6 +556,11 @@ if ($opt{help}) {
   require Pod::Usage;
   Pod::Usage::pod2usage(-verbose => 2);
   exit 0;
+}
+
+if (defined $opt{sampling_method}) {
+	die "Option sampling-method accepts either 'BERNOULLI' or 'SYSTEM'" if ('BERNOULLI' ne $opt{sampling_method} and 'SYSTEM' ne $opt{sampling_method});
+	$opt{random}=1;
 }
 
 $opt{ordered} = $opt{ordered_desc} ? 'DESC'
@@ -693,7 +708,7 @@ foreach my $row (@{$table_info}) {
           SELECT greatest(count(*), ?) FROM $table
         }, undef, $_->[1]);
         my $percent = 100 * $_->[1] / $table_num_rows;
-        $tablesample = "TABLESAMPLE BERNOULLI ($percent)";
+        $tablesample = "TABLESAMPLE $opt{sampling_method} ($percent)";
       }
     } elsif ($_->[1] =~ /^\d+(\.\d+)?%$/) { # percent value turned into LIMIT
       if (not $opt{random} or $pg_version < version->declare('9.5')) {
@@ -704,7 +719,7 @@ foreach my $row (@{$table_info}) {
         $limit = "LIMIT $total_rows";
       } else {
         my $percent = (substr $_->[1], 0, (length $_->[1]) - 1);
-        $tablesample = "TABLESAMPLE BERNOULLI ($percent)";
+        $tablesample = "TABLESAMPLE $opt{sampling_method} ($percent)";
       }
     } else { # otherwise treated as subselect
       $where = "($_->[1])";
