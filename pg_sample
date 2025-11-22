@@ -50,6 +50,12 @@ import errors.
 
 =over
 
+=item B<--approxcount>
+
+In order to count the tuples stored in a table do not read them but read the
+count stored in PostgreSQL's 'pg_class' table.  It may be way off is the table
+needs an ANALYZE pass.
+
 =item I<dbname>
 
 Specifies the database to sample. If not specified, uses the
@@ -643,14 +649,15 @@ unless ($opt{'data-only'}) {
 # If running PostgreSQL 9.1 or later, use UNLOGGED tables
 my $unlogged = $pg_version >= version->declare('9.1') ? 'UNLOGGED' : '';
 
-# Ensuring that the user can read (GRANT...) the 'pg_class' table
-eval {
-	$dbh->selectrow_array(qq{SELECT 1 FROM pg_class LIMIT 1")});
-};
-if ($@) {
-	warn "I cannot read from the 'pg_class' table, therefore I cannot honor --approxcount: $@\n";
-	$opt{approxcount}=0;
-}
+# # Useless(?)
+# # Ensuring that the user can read (GRANT...) the 'pg_class' table
+# eval {
+#   $dbh->selectrow_array(qq{SELECT 1 FROM pg_class LIMIT 1")});
+# };
+# if ($@) {
+#   warn "I cannot read from the 'pg_class' table, therefore I cannot honor --approxcount: $@\n";
+#   $opt{approxcount}=0;
+# }
 
 notice "Creating sample schema $opt{sample_schema}\n";
 $dbh->do(qq{ CREATE SCHEMA $opt{sample_schema} });
@@ -696,6 +703,14 @@ foreach my $row (@{$table_info}) {
       AND is_generated='NEVER'
       ORDER BY ordinal_position
   }, { Slice => {} }, ($tname, $sname) ) ];
+
+	my $sthTabelExistsP = $dbh->table_info('', undef, $tname, 'TABLE'); # FOREIGN TABLE, VIEW, MATERIALIZED VIEW
+  my $table_exists = keys (@{$sthTabelExistsP->fetchall_arrayref({})});
+  $sthTabelExistsP->finish();
+  if ( 0>= $table_exists ) {
+    notice "\nThe '$tname' table vanished\n" if ($opt{verbose});
+    next;
+  }
 
   my $table = Table->new($sname, $tname, $columns);
   push @tables, $table;
@@ -782,6 +797,7 @@ foreach my $row (@{$table_info}) {
   }
 }
 
+
 # Find foreign keys
 my @fks;
 foreach my $table (@tables) {
@@ -821,21 +837,33 @@ foreach my $fk (@fks) {
 }
 
 
+{
+	my $warn_last_table=''; # To avoid repeating a notice about the same table
+	
 # Skip FK inserts if entire table is being included anyway
 # (useful for cases where we don't support equality operator)
 sub should_skip_insert_for_fk ($) {
   my $table_name = shift;
   
   $table_name =~ s/"\."/\./g;
-  notice "$table_name\n";
+		my $already_noticed;
+		if ($warn_last_table ne $table_name) {
+			# The last notice wasn't about this table
+			$warn_last_table = $table_name;
+			$already_noticed=0;
+		}	else {
+			$already_noticed=1;
+		}		
+    notice "$table_name\n" if (! $already_noticed);
   foreach my $limit (@limits) {
     my ($regex, $action) = @$limit;
     if ($table_name =~ $regex && $action eq '*') {
-      notice "Skipping $table_name as all data is imported\n";
+				notice "Skipping $table_name (regex $regex) as all data is imported\n" if (! $already_noticed);
       return 1;  # Skip if it matches the regex and action is '*'
     }
   }
   return 0;  # Do not skip by default
+}
 }
 
 # Obtains the amount of tuples in a table.
